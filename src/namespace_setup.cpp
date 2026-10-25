@@ -15,6 +15,15 @@ struct ChildArgs {
 static int child_main(void* arg) {
     ChildArgs* a = static_cast<ChildArgs*>(arg);
     const ContainerConfig& cfg = *a->cfg;
+    
+    // wait for the parent's "go" signal
+    if (a->sync_fd >= 0) {
+        char c;
+        if (read(a->sync_fd, &c, 1) != 1) {
+            perror("sync read");
+            return 1;
+        }
+    }
 
     if (sethostname(cfg.hostname.c_str(), cfg.hostname.size()) != 0) {
         perror("sethostname");

@@ -1,4 +1,6 @@
 #include <cstdio>
+#include <fcntl.h>
+#include <unistd.h>
 #include <sys/wait.h>
 #include "namespace_setup.h"
 
@@ -9,15 +11,27 @@ int main() {
     cfg.rootfs = "./rootfs";
     cfg.cmd = {"/bin/sh"};
 
-    pid_t pid = spawn_container(cfg, -1);
+    int fds[2];
+    if (pipe2(fds, O_CLOEXEC) != 0) {
+        perror("pipe2");
+        return 1;
+    }
+
+    pid_t pid = spawn_container(cfg, fds[0]);
     if (pid < 0) {
         perror("clone");
         return 1;
     }
-    printf("parent: child's pid as seen from outside is %d\n", pid);
+    close(fds[0]);
+
+    // Phase 2: cgroup setup goes HERE, before the green light
+
+    
+    if (write(fds[1], "x", 1) != 1) perror("write");
+    close(fds[1]);
 
     int status = 0;
     waitpid(pid, &status, 0);
-    printf("parent: child finished\n");
+    printf("container exited\n");
     return 0;
 }
