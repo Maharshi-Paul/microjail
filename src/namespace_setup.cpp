@@ -3,8 +3,9 @@
 #include <csignal>
 #include <unistd.h>
 #include <cstdio>
-#include <vector>
 #include <string>
+#include <vector>
+#include <sys/mount.h>
 
 struct ChildArgs {
     const ContainerConfig* cfg;
@@ -17,6 +18,28 @@ static int child_main(void* arg) {
 
     if (sethostname(cfg.hostname.c_str(), cfg.hostname.size()) != 0) {
         perror("sethostname");
+        return 1;
+    }
+
+    // stop our mounts from leaking out to the host
+    if (mount(nullptr, "/", nullptr, MS_REC | MS_PRIVATE, nullptr) != 0) {
+        perror("mount private");
+        return 1;
+    }
+
+    // the Alpine folder becomes "/"
+    if (chroot(cfg.rootfs.c_str()) != 0) {
+        perror("chroot");
+        return 1;
+    }
+    if (chdir("/") != 0) {
+        perror("chdir");
+        return 1;
+    }
+
+    // fresh /proc for this container
+    if (mount("proc", "/proc", "proc", 0, nullptr) != 0) {
+        perror("mount proc");
         return 1;
     }
 
@@ -37,7 +60,7 @@ pid_t spawn_container(const ContainerConfig& cfg, int sync_fd) {
     ChildArgs args{&cfg, sync_fd};
 
     pid_t pid = clone(child_main, stack + STACK_SIZE,
-                      CLONE_NEWPID | CLONE_NEWUTS | SIGCHLD, &args);
+                      CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS | SIGCHLD, &args);
 
     delete[] stack;
     return pid;
