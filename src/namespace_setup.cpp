@@ -60,7 +60,7 @@ pid_t spawn_container(const ContainerConfig& cfg, int sync_fd) {
     ChildArgs args{&cfg, sync_fd};
 
     pid_t pid = clone(child_main, stack + STACK_SIZE,
-                      CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS | SIGCHLD, &args);
+                      CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS | CLONE_NEWIPC | SIGCHLD, &args);
 
     delete[] stack;
     return pid;
