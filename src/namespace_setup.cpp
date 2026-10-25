@@ -3,6 +3,8 @@
 #include <csignal>
 #include <unistd.h>
 #include <cstdio>
+#include <vector>
+#include <string>
 
 struct ChildArgs {
     const ContainerConfig* cfg;
@@ -18,10 +20,14 @@ static int child_main(void* arg) {
         return 1;
     }
 
-    char buf[64];
-    gethostname(buf, sizeof(buf));
-    printf("inside child: hostname = %s, pid = %d\n", buf, getpid());
-    return 0;
+    std::vector<char*> argv;
+    for (const std::string& s : cfg.cmd)
+        argv.push_back(const_cast<char*>(s.c_str()));
+    argv.push_back(nullptr);
+
+    execvp(argv[0], argv.data());
+    perror("execvp");
+    return 1;
 }
 
 pid_t spawn_container(const ContainerConfig& cfg, int sync_fd) {
