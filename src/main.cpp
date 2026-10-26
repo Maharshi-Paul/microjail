@@ -8,6 +8,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <string>
+#include <vector>
 #include "namespace_setup.h"
 #include "cgroup_manager.h"
 #include "logger.h"
@@ -165,6 +166,30 @@ static int cmd_run(int argc, char** argv) {
     return 0;
 }
 
+static int cmd_list() {
+    std::vector<ContainerState> all = state_list();
+    printf("%-12s %-8s %-8s %-6s %-9s %s\n",
+           "NAME", "PID", "MEM", "CPU%", "STARTED", "ROOTFS");
+    int shown = 0;
+    for (const ContainerState& st : all) {
+        if (kill(st.pid, 0) != 0 && errno == ESRCH) {   // stale file
+            state_remove(st.name);
+            continue;
+        }
+        char ts[16];
+        time_t t = st.start_time;
+        struct tm tmv;
+        localtime_r(&t, &tmv);
+        strftime(ts, sizeof(ts), "%H:%M:%S", &tmv);
+        std::string mem = std::to_string(st.mem_bytes / (1024 * 1024)) + "M";
+        printf("%-12s %-8d %-8s %-6d %-9s %s\n", st.name.c_str(), (int)st.pid,
+               mem.c_str(), st.cpu_percent, ts, st.rootfs.c_str());
+        shown++;
+    }
+    if (shown == 0) printf("(no running containers)\n");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     if (geteuid() != 0) {
         fprintf(stderr, "microjail must run as root (use sudo)\n");
@@ -176,7 +201,7 @@ int main(int argc, char** argv) {
     }
     std::string c = argv[1];
     if (c == "run")  return cmd_run(argc, argv);
-    if (c == "list") { printf("list: not implemented yet\n"); return 0; }
+    if (c == "list") return cmd_list();
     if (c == "stop") { printf("stop: not implemented yet\n"); return 0; }
     usage();
     return 1;
