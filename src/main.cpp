@@ -9,6 +9,7 @@
 #include <string>
 #include "namespace_setup.h"
 #include "cgroup_manager.h"
+#include "logger.h"
 
 static void usage() {
     fprintf(stderr,
@@ -98,12 +99,18 @@ static int cmd_run(int argc, char** argv) {
         !cgroup_set_cpu(id, cfg.cpu_percent) ||
         !cgroup_add_pid(id, pid)) {
         fprintf(stderr, "cgroup setup failed\n");
+        log_event("ERROR", id + " cgroup setup failed");
         close(fds[1]);
         kill(pid, SIGKILL);
         waitpid(pid, nullptr, 0);
         cgroup_remove(id);
         return 1;
     }
+
+    log_event("START", id + " pid=" + std::to_string(pid) +
+              " mem=" + std::to_string(cfg.mem_bytes / (1024 * 1024)) + "M" +
+              " cpu=" + std::to_string(cfg.cpu_percent) + "%" +
+              " rootfs=" + cfg.rootfs);
 
     // green light: the child is inside its cgroup, let it run
     if (write(fds[1], "x", 1) != 1) perror("write");
@@ -113,10 +120,13 @@ static int cmd_run(int argc, char** argv) {
     waitpid(pid, &status, 0);
     cgroup_remove(id);
 
-    if (WIFEXITED(status))
+    if (WIFEXITED(status)) {
         printf("container '%s' exited with code %d\n", id.c_str(), WEXITSTATUS(status));
-    else if (WIFSIGNALED(status))
+        log_event("EXIT", id + " code=" + std::to_string(WEXITSTATUS(status)));
+    } else if (WIFSIGNALED(status)) {
         printf("container '%s' killed by signal %d\n", id.c_str(), WTERMSIG(status));
+        log_event("EXIT", id + " killed by signal " + std::to_string(WTERMSIG(status)));
+    }
     return 0;
 }
 
