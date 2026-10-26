@@ -13,6 +13,7 @@
 #include "cgroup_manager.h"
 #include "logger.h"
 #include "state.h"
+#include "process_monitor.h"
 
 static void usage() {
     fprintf(stderr,
@@ -151,8 +152,7 @@ static int cmd_run(int argc, char** argv) {
     if (write(fds[1], "x", 1) != 1) perror("write");
     close(fds[1]);
 
-    int status = 0;
-    waitpid(pid, &status, 0);
+    int status = wait_and_monitor(pid, id);
     cgroup_remove(id);
     state_remove(id);
 
