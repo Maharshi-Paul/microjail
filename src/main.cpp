@@ -3,6 +3,7 @@
 #include <csignal>
 #include <cerrno>
 #include <ctime>
+#include <cctype>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -10,6 +11,7 @@
 #include "namespace_setup.h"
 #include "cgroup_manager.h"
 #include "logger.h"
+#include "state.h"
 
 static void usage() {
     fprintf(stderr,
@@ -33,6 +35,14 @@ static long parse_size(const std::string& s) {
         case 'G': case 'g': return n * 1024L * 1024 * 1024;
         default:  return -1;
     }
+}
+
+// the name ends up inside file paths, so allow only safe characters
+static bool valid_name(const std::string& s) {
+    if (s.empty() || s.size() > 32) return false;
+    for (char c : s)
+        if (!isalnum((unsigned char)c) && c != '-' && c != '_') return false;
+    return true;
 }
 
 static int cmd_run(int argc, char** argv) {
@@ -80,6 +90,21 @@ static int cmd_run(int argc, char** argv) {
     cfg.rootfs = argv[i];
     for (int j = i + 1; j < argc; j++) cfg.cmd.push_back(argv[j]);
 
+    if (!valid_name(cfg.name)) {
+        fprintf(stderr, "bad --name: use letters, digits, '-' and '_' only\n");
+        return 1;
+    }
+    ContainerState old;
+    if (state_load(cfg.name, old)) {
+        if (kill(old.pid, 0) == 0) {
+            fprintf(stderr, "container '%s' is already running (pid %d)\n",
+                    cfg.name.c_str(), (int)old.pid);
+            return 1;
+        }
+        state_remove(cfg.name);      // stale file left by a crash
+        cgroup_remove(cfg.name);
+    }
+
     int fds[2];
     if (pipe2(fds, O_CLOEXEC) != 0) {
         perror("pipe2");
@@ -112,6 +137,15 @@ static int cmd_run(int argc, char** argv) {
               " cpu=" + std::to_string(cfg.cpu_percent) + "%" +
               " rootfs=" + cfg.rootfs);
 
+    ContainerState st;
+    st.name = id;
+    st.pid = pid;
+    st.start_time = time(nullptr);
+    st.mem_bytes = cfg.mem_bytes;
+    st.cpu_percent = cfg.cpu_percent;
+    st.rootfs = cfg.rootfs;
+    state_save(st);
+
     // green light: the child is inside its cgroup, let it run
     if (write(fds[1], "x", 1) != 1) perror("write");
     close(fds[1]);
@@ -119,6 +153,7 @@ static int cmd_run(int argc, char** argv) {
     int status = 0;
     waitpid(pid, &status, 0);
     cgroup_remove(id);
+    state_remove(id);
 
     if (WIFEXITED(status)) {
         printf("container '%s' exited with code %d\n", id.c_str(), WEXITSTATUS(status));
