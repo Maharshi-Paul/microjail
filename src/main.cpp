@@ -47,12 +47,33 @@ static bool valid_name(const std::string& s) {
     return true;
 }
 
+// defaults from config/limits.conf (command-line options override these)
+static void load_defaults(ContainerConfig& cfg) {
+    FILE* f = fopen("config/limits.conf", "r");
+    if (!f) return;
+    char line[128];
+    while (fgets(line, sizeof(line), f)) {
+        char key[32], val[64];
+        if (sscanf(line, " %31[^=]=%63s", key, val) != 2) continue;
+        std::string k = key;
+        if (k == "mem") {
+            long m = parse_size(val);
+            if (m > 0) cfg.mem_bytes = m;
+        } else if (k == "cpu") {
+            int c = atoi(val);
+            if (c >= 1 && c <= 100) cfg.cpu_percent = c;
+        }
+    }
+    fclose(f);
+}
+
 static int cmd_run(int argc, char** argv) {
     ContainerConfig cfg;
     cfg.name = "demo";
     cfg.hostname = "jail";
     cfg.mem_bytes = 50L * 1024 * 1024;
     cfg.cpu_percent = 50;
+    load_defaults(cfg);
 
     // options come first; the first word without "--" is the rootfs
     int i = 2;
