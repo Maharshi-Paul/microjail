@@ -1,20 +1,83 @@
-#include <csignal>
-#include <string>
-#include "cgroup_manager.h"
 #include <cstdio>
+#include <cstdlib>
+#include <csignal>
+#include <cerrno>
+#include <ctime>
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <string>
 #include "namespace_setup.h"
+#include "cgroup_manager.h"
 
-int main() {
+static void usage() {
+    fprintf(stderr,
+        "usage:\n"
+        "  microjail run [--name N] [--mem 50M] [--cpu 50] [--hostname H] <rootfs> <cmd> [args...]\n"
+        "  microjail list\n"
+        "  microjail stop <name>\n");
+}
+
+// "100M" -> bytes. Returns -1 on bad input.
+static long parse_size(const std::string& s) {
+    char* end = nullptr;
+    long n = strtol(s.c_str(), &end, 10);
+    if (end == s.c_str() || n <= 0) return -1;
+    char suffix = *end;
+    if (suffix != '\0' && end[1] != '\0') return -1;
+    switch (suffix) {
+        case '\0': return n;
+        case 'K': case 'k': return n * 1024;
+        case 'M': case 'm': return n * 1024 * 1024;
+        case 'G': case 'g': return n * 1024L * 1024 * 1024;
+        default:  return -1;
+    }
+}
+
+static int cmd_run(int argc, char** argv) {
     ContainerConfig cfg;
     cfg.name = "demo";
     cfg.hostname = "jail";
-    cfg.rootfs = "./rootfs";
-    cfg.cmd = {"/bin/sh"};
-    cfg.mem_bytes = 50L * 1024 * 1024;   // 50 MB
-    cfg.cpu_percent = 50;                // half of one CPU
+    cfg.mem_bytes = 50L * 1024 * 1024;
+    cfg.cpu_percent = 50;
+
+    // options come first; the first word without "--" is the rootfs
+    int i = 2;
+    for (; i < argc; i++) {
+        std::string a = argv[i];
+        if (a.rfind("--", 0) != 0) break;
+        if (i + 1 >= argc) {
+            fprintf(stderr, "missing value for %s\n", a.c_str());
+            return 1;
+        }
+        std::string v = argv[++i];
+        if (a == "--name") {
+            cfg.name = v;
+        } else if (a == "--hostname") {
+            cfg.hostname = v;
+        } else if (a == "--mem") {
+            cfg.mem_bytes = parse_size(v);
+            if (cfg.mem_bytes < 0) {
+                fprintf(stderr, "bad --mem value: %s (try 50M)\n", v.c_str());
+                return 1;
+            }
+        } else if (a == "--cpu") {
+            cfg.cpu_percent = atoi(v.c_str());
+            if (cfg.cpu_percent < 1 || cfg.cpu_percent > 100) {
+                fprintf(stderr, "--cpu must be 1-100\n");
+                return 1;
+            }
+        } else {
+            fprintf(stderr, "unknown option: %s\n", a.c_str());
+            return 1;
+        }
+    }
+    if (argc - i < 2) {          // need a rootfs and at least one command word
+        usage();
+        return 1;
+    }
+    cfg.rootfs = argv[i];
+    for (int j = i + 1; j < argc; j++) cfg.cmd.push_back(argv[j]);
 
     int fds[2];
     if (pipe2(fds, O_CLOEXEC) != 0) {
@@ -35,19 +98,41 @@ int main() {
         !cgroup_set_cpu(id, cfg.cpu_percent) ||
         !cgroup_add_pid(id, pid)) {
         fprintf(stderr, "cgroup setup failed\n");
+        close(fds[1]);
         kill(pid, SIGKILL);
         waitpid(pid, nullptr, 0);
         cgroup_remove(id);
         return 1;
     }
 
-    
+    // green light: the child is inside its cgroup, let it run
     if (write(fds[1], "x", 1) != 1) perror("write");
     close(fds[1]);
 
     int status = 0;
     waitpid(pid, &status, 0);
     cgroup_remove(id);
-    printf("container exited\n");
+
+    if (WIFEXITED(status))
+        printf("container '%s' exited with code %d\n", id.c_str(), WEXITSTATUS(status));
+    else if (WIFSIGNALED(status))
+        printf("container '%s' killed by signal %d\n", id.c_str(), WTERMSIG(status));
     return 0;
+}
+
+int main(int argc, char** argv) {
+    if (geteuid() != 0) {
+        fprintf(stderr, "microjail must run as root (use sudo)\n");
+        return 1;
+    }
+    if (argc < 2) {
+        usage();
+        return 1;
+    }
+    std::string c = argv[1];
+    if (c == "run")  return cmd_run(argc, argv);
+    if (c == "list") { printf("list: not implemented yet\n"); return 0; }
+    if (c == "stop") { printf("stop: not implemented yet\n"); return 0; }
+    usage();
+    return 1;
 }
