@@ -190,6 +190,34 @@ static int cmd_list() {
     return 0;
 }
 
+static int cmd_stop(const std::string& name) {
+    ContainerState st;
+    if (!state_load(name, st)) {
+        fprintf(stderr, "no such container: %s\n", name.c_str());
+        return 1;
+    }
+    if (kill(st.pid, 0) != 0) {
+        fprintf(stderr, "'%s' is not running; cleaning up\n", name.c_str());
+        state_remove(name);
+        cgroup_remove(name);
+        return 1;
+    }
+    printf("stopping '%s' (pid %d)...\n", name.c_str(), (int)st.pid);
+    kill(st.pid, SIGTERM);
+    for (int i = 0; i < 30; i++) {          // up to 3 seconds
+        usleep(100000);
+        if (kill(st.pid, 0) != 0) {
+            printf("stopped\n");
+            return 0;
+        }
+    }
+    printf("did not stop in time, sending SIGKILL\n");
+    kill(st.pid, SIGKILL);
+    usleep(200000);
+    printf("stopped\n");
+    return 0;
+}
+
 int main(int argc, char** argv) {
     if (geteuid() != 0) {
         fprintf(stderr, "microjail must run as root (use sudo)\n");
@@ -202,7 +230,10 @@ int main(int argc, char** argv) {
     std::string c = argv[1];
     if (c == "run")  return cmd_run(argc, argv);
     if (c == "list") return cmd_list();
-    if (c == "stop") { printf("stop: not implemented yet\n"); return 0; }
+        if (c == "stop") {
+        if (argc < 3) { usage(); return 1; }
+        return cmd_stop(argv[2]);
+    }
     usage();
     return 1;
 }
