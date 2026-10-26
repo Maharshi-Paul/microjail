@@ -69,3 +69,4 @@ Testing/
 
 rootfs/
 /microjail
+logs/*.log
