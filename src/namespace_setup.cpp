@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 #include <sys/mount.h>
+#include "fs_isolation.h"
 
 struct ChildArgs {
     const ContainerConfig* cfg;
@@ -38,15 +39,8 @@ static int child_main(void* arg) {
         return 1;
     }
 
-    // the Alpine folder becomes "/"
-    if (chroot(cfg.rootfs.c_str()) != 0) {
-        perror("chroot");
-        return 1;
-    }
-    if (chdir("/") != 0) {
-        perror("chdir");
-        return 1;
-    }
+    // the Alpine folder becomes "/" (pivot_root, with chroot as a fallback)
+    if (!isolate_rootfs(cfg.rootfs)) return 1;
 
     // fresh /proc for this container
     if (mount("proc", "/proc", "proc", 0, nullptr) != 0) {
