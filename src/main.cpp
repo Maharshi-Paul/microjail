@@ -134,7 +134,7 @@ static int cmd_run(int argc, char** argv) {
         return 1;
     }
 
-    pid_t pid = spawn_container(cfg, fds[0]);
+    pid_t pid = spawn_container(cfg, fds[0], fds[1]);
     if (pid < 0) {
         perror("clone");
         return 1;

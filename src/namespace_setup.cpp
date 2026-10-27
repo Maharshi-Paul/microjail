@@ -10,6 +10,7 @@
 struct ChildArgs {
     const ContainerConfig* cfg;
     int sync_fd;
+    int close_fd;
 };
 
 static int child_main(void* arg) {
@@ -17,10 +18,11 @@ static int child_main(void* arg) {
     const ContainerConfig& cfg = *a->cfg;
     
     // wait for the parent's "go" signal
+    if (a->close_fd >= 0) close(a->close_fd);   // drop our copy of the write end
     if (a->sync_fd >= 0) {
         char c;
         if (read(a->sync_fd, &c, 1) != 1) {
-            perror("sync read");
+            fprintf(stderr, "container aborted: parent went away before start\n");
             return 1;
         }
     }
@@ -62,11 +64,11 @@ static int child_main(void* arg) {
     return 1;
 }
 
-pid_t spawn_container(const ContainerConfig& cfg, int sync_fd) {
+pid_t spawn_container(const ContainerConfig& cfg, int sync_fd, int close_fd) {
     const int STACK_SIZE = 1024 * 1024;
     char* stack = new char[STACK_SIZE];
 
-    ChildArgs args{&cfg, sync_fd};
+    ChildArgs args{&cfg, sync_fd, close_fd};
 
     pid_t pid = clone(child_main, stack + STACK_SIZE,
                       CLONE_NEWPID | CLONE_NEWUTS | CLONE_NEWNS | CLONE_NEWIPC | SIGCHLD, &args);
