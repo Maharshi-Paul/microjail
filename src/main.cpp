@@ -7,6 +7,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sys/stat.h>
+#include <sys/vfs.h>
+#include <linux/magic.h>
 #include <string>
 #include <vector>
 #include "namespace_setup.h"
@@ -67,7 +70,20 @@ static void load_defaults(ContainerConfig& cfg) {
     fclose(f);
 }
 
+// true if /sys/fs/cgroup is a cgroups v2 (unified) mount
+static bool cgroups_v2_ok() {
+    struct statfs s;
+    if (statfs("/sys/fs/cgroup", &s) != 0) return false;
+    return s.f_type == CGROUP2_SUPER_MAGIC;
+}
+
 static int cmd_run(int argc, char** argv) {
+
+    if (!cgroups_v2_ok()) {
+        fprintf(stderr, "cgroups v2 not found at /sys/fs/cgroup (a unified hierarchy is required)\n");
+        return 1;
+    }
+
     ContainerConfig cfg;
     cfg.name = "demo";
     cfg.hostname = "jail";
@@ -112,6 +128,12 @@ static int cmd_run(int argc, char** argv) {
     }
     cfg.rootfs = argv[i];
     for (int j = i + 1; j < argc; j++) cfg.cmd.push_back(argv[j]);
+    
+    struct stat sb;
+    if (stat(cfg.rootfs.c_str(), &sb) != 0 || !S_ISDIR(sb.st_mode)) {
+        fprintf(stderr, "rootfs not found or not a directory: %s\n", cfg.rootfs.c_str());
+        return 1;
+    }
 
     if (!valid_name(cfg.name)) {
         fprintf(stderr, "bad --name: use letters, digits, '-' and '_' only\n");
@@ -134,7 +156,7 @@ static int cmd_run(int argc, char** argv) {
         return 1;
     }
 
-    pid_t pid = spawn_container(cfg, fds[0]);
+    pid_t pid = spawn_container(cfg, fds[0], fds[1]);
     if (pid < 0) {
         perror("clone");
         return 1;
