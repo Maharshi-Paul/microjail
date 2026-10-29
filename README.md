@@ -1,10 +1,7 @@
-<!--
-TODO: Once a banner is designed, add it back here (and save it as assets/banner.png):
-
 <p align="center">
   <img src="assets/banner.png" alt="MicroJail banner" width="100%">
 </p>
--->
+
 
 # MicroJail
 
