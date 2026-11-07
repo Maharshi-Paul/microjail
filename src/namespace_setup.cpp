@@ -3,6 +3,7 @@
 #include <csignal>
 #include <unistd.h>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include <sys/mount.h>
@@ -52,8 +53,15 @@ static int child_main(void* arg) {
     for (const std::string& s : cfg.cmd)
         argv.push_back(const_cast<char*>(s.c_str()));
     argv.push_back(nullptr);
+    
+    // start from a clean environment instead of inheriting the host's
+    clearenv();
+    setenv("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", 1);
+    setenv("HOME", "/root", 1);
+    setenv("TERM", "xterm", 1);
 
     execvp(argv[0], argv.data());
+
     perror("execvp");
     return 1;
 }

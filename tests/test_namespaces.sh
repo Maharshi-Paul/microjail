@@ -81,6 +81,21 @@ t_dupname()  {
     return $r
 }
 
+t_stale_pid() {
+    sleep 30 &
+    local victim=$!
+    mkdir -p /var/run/microjail
+    printf 'name=t-ghost\npid=%s\nstart=0\nmem=1\ncpu=1\nrootfs=x\n' "$victim" \
+        > /var/run/microjail/t-ghost.state
+    $MJ stop t-ghost >/dev/null 2>&1
+    kill -0 "$victim" 2>/dev/null          # the victim must still be alive
+    local r=$?
+    kill "$victim" 2>/dev/null
+    wait "$victim" 2>/dev/null
+    rm -f /var/run/microjail/t-ghost.state
+    return $r
+}
+
 echo "== MicroJail checks =="
 check "own hostname"                   t_hostname
 check "process is PID 1 in container"  t_pid1
@@ -95,6 +110,7 @@ check "list and stop work"             t_lifecycle
 check "bad --mem rejected"             t_badmem
 check "missing rootfs rejected"        t_badroot
 check "duplicate name rejected"        t_dupname
+check "stop ignores a stale PID record" t_stale_pid
 
 echo "== $PASS passed, $FAIL failed =="
 [ "$FAIL" -eq 0 ]

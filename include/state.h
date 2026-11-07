@@ -15,3 +15,5 @@ bool state_save(const ContainerState& st);
 bool state_load(const std::string& name, ContainerState& out);
 void state_remove(const std::string& name);
 std::vector<ContainerState> state_list();
+// true only if the PID is alive AND belongs to this container's cgroup
+bool state_is_alive(const ContainerState& st);
