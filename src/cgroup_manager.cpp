@@ -66,6 +66,11 @@ bool cgroup_add_pid(const std::string& id, pid_t pid) {
 
 void cgroup_remove(const std::string& id) {
     std::string dir = ROOT + "/" + id;
-    if (rmdir(dir.c_str()) != 0 && errno != ENOENT)
-        perror("rmdir cgroup");
+    // kill anything still inside, then retry: dying processes can keep the group busy
+    write_file(dir + "/cgroup.kill", "1", false);
+    for (int i = 0; i < 20; i++) {
+        if (rmdir(dir.c_str()) == 0 || errno == ENOENT) return;
+        usleep(50000);                         // up to about 1 second in total
+    }
+    perror("rmdir cgroup");
 }
