@@ -141,7 +141,7 @@ static int cmd_run(int argc, char** argv) {
     }
     ContainerState old;
     if (state_load(cfg.name, old)) {
-        if (kill(old.pid, 0) == 0) {
+        if (state_is_alive(old)) {
             fprintf(stderr, "container '%s' is already running (pid %d)\n",
                     cfg.name.c_str(), (int)old.pid);
             return 1;
@@ -215,7 +215,7 @@ static int cmd_list() {
            "NAME", "PID", "MEM", "CPU%", "STARTED", "ROOTFS");
     int shown = 0;
     for (const ContainerState& st : all) {
-        if (kill(st.pid, 0) != 0 && errno == ESRCH) {   // stale file
+        if (!state_is_alive(st)) {   // stale file
             state_remove(st.name);
             continue;
         }
@@ -239,7 +239,7 @@ static int cmd_stop(const std::string& name) {
         fprintf(stderr, "no such container: %s\n", name.c_str());
         return 1;
     }
-    if (kill(st.pid, 0) != 0) {
+    if (!state_is_alive(st)) {
         fprintf(stderr, "'%s' is not running; cleaning up\n", name.c_str());
         state_remove(name);
         cgroup_remove(name);
@@ -249,7 +249,7 @@ static int cmd_stop(const std::string& name) {
     kill(st.pid, SIGTERM);
     for (int i = 0; i < 30; i++) {          // up to 3 seconds
         usleep(100000);
-        if (kill(st.pid, 0) != 0) {
+        if (!state_is_alive(st)) {
             printf("stopped\n");
             return 0;
         }

@@ -2,6 +2,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -44,6 +45,16 @@ bool state_load(const std::string& name, ContainerState& out) {
         else if (k == "rootfs") out.rootfs = v;
     }
     return !out.name.empty();
+}
+
+bool state_is_alive(const ContainerState& st) {
+    if (st.pid <= 0 || kill(st.pid, 0) != 0) return false;
+    std::ifstream f("/proc/" + std::to_string(st.pid) + "/cgroup");
+    std::string line;
+    const std::string needle = "/microjail/" + st.name;
+    while (std::getline(f, line))
+        if (line.find(needle) != std::string::npos) return true;
+    return false;
 }
 
 void state_remove(const std::string& name) {
