@@ -70,3 +70,4 @@ Testing/
 rootfs/
 /microjail
 logs/*.log
+*.d
